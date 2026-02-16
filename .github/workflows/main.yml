@@ -11,52 +11,50 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ARCH: arm64
+      PLATFORM_VERSION: "13"
+      ANDROID_MAJOR_VERSION: "t"
+      KCFLAGS: -w
 
     steps:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
           repository: rasolarmand114-tech/kernel_samsung_exynos850
+          path: kernel_root
           ref: ${{ github.event.inputs.BRANCH }}
           fetch-depth: 0
 
       - name: Install Dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y \
-            bc bison flex build-essential \
-            libssl-dev libelf-dev \
-            wget curl lz4 \
-            xz-utils git
+          sudo apt install -y bc bison flex build-essential libssl-dev libelf-dev wget curl lz4 xz-utils git
 
       - name: Download ARM GNU 12.2 Toolchain
         run: |
-          set -e
-          wget -O toolchain.tar.xz \
-          "https://developer.arm.com/-/media/files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz"
+          set -euo pipefail
+          TOOL_URL="https://developer.arm.com/-/media/files/downloads/gnu/12.2.rel1/binrel/arm-gnu-toolchain-12.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz"
+          wget -q -O toolchain.tar.xz "$TOOL_URL"
           rm -rf tc
           mkdir -p tc
           tar -xf toolchain.tar.xz -C tc --strip-components=1
+          ls -la tc/bin
 
       - name: Build Kernel
         id: buildKernel
         run: |
           set -euo pipefail
-
-          export ARCH=arm64
+          cd kernel_root
+          export CROSS_COMPILE="${GITHUB_WORKSPACE}/tc/bin/aarch64-none-linux-gnu-"
           export SUBARCH=arm64
-          export PLATFORM_VERSION=13
-          export ANDROID_MAJOR_VERSION=t
-          export KCFLAGS=-w
-
-          export CROSS_COMPILE=$(pwd)/tc/bin/aarch64-none-linux-gnu-
           export KBUILD_BUILD_USER=github
           export KBUILD_BUILD_HOST=actions
 
           DEFCONFIG=exlinux_defconfig
 
-          make O=out ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE KCFLAGS=$KCFLAGS $DEFCONFIG
-          make -j$(nproc) O=out ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE KCFLAGS=$KCFLAGS
+          make O=out ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} KCFLAGS=${KCFLAGS} ${DEFCONFIG}
+          make -j$(nproc) O=out ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} KCFLAGS=${KCFLAGS}
 
           gitsha1=$(git rev-parse --short HEAD)
           buildDetails="$(make -s kernelversion)-${gitsha1}-$(date +'%Y%m%d%H%M%S')"
@@ -67,6 +65,6 @@ jobs:
         with:
           name: Kernel-${{ steps.buildKernel.outputs.buildDetails }}
           path: |
-            out/arch/arm64/boot/Image
-            out/arch/arm64/boot/Image.gz
-            out/arch/arm64/boot/dts/**/*.dtb
+            kernel_root/out/arch/arm64/boot/Image
+            kernel_root/out/arch/arm64/boot/Image.gz
+            kernel_root/out/arch/arm64/boot/dts/**/*.dtb
